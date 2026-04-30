@@ -18,10 +18,12 @@
  */
 
 #include <../cs2fixes.h>
+#include "addresses.h"
 #include "utlstring.h"
 #include "playermanager.h"
 #include "entity/ccsplayercontroller.h"
 #include "recipientfilters.h"
+#include "tracefilter.h"
 
 #define VPROF_ENABLED
 #include "tier0/vprof.h"
@@ -237,5 +239,88 @@ void ZEPlayer::SetVelocity(const Vector &velocity)
 			return;
 		}
 		pawn->Teleport(NULL, NULL, &velocity);
+	}
+}
+
+void ZEPlayer::GetBBoxBounds(bbox_t *bounds)
+{
+	if (!bounds)
+	{
+		return;
+	}
+
+	bounds->mins = {-16.0f, -16.0f, 0.0f};
+	bounds->maxs = {16.0f, 16.0f, 72.0f};
+
+	CCSPlayerPawn *pawn = this->GetPawn();
+	if (pawn && pawn->m_pMovementServices() && static_cast<CCSPlayer_MovementServices *>(pawn->m_pMovementServices())->m_bDucked())
+	{
+		bounds->maxs.z = 54.0f;
+	}
+}
+
+void ZEPlayer::RegisterLanding(const Vector &velocity)
+{
+	if (this->processingMovement && this->currentMoveData)
+	{
+		this->landingOrigin = this->currentMoveData->m_vecAbsOrigin;
+	}
+	else
+	{
+		this->GetOrigin(&this->landingOrigin);
+	}
+
+	this->landingVelocity = velocity;
+}
+
+void ZEPlayer::ApplySlopeFix()
+{
+	if (!this->processingMovement || !this->currentMoveData)
+	{
+		return;
+	}
+
+	CCSPlayerPawn *pawn = this->GetPawn();
+	if (!pawn)
+	{
+		return;
+	}
+
+	bbox_t bounds;
+	this->GetBBoxBounds(&bounds);
+
+	CTraceFilterPlayerMovementCS filter(pawn);
+	Vector ground = this->currentMoveData->m_vecAbsOrigin;
+	ground.z -= 2.0f;
+	trace_t trace;
+
+	addresses::TracePlayerBBox(this->currentMoveData->m_vecAbsOrigin, ground, bounds, &filter, trace);
+
+	if (trace.m_bStartInSolid || trace.m_flFraction == 1.0f || trace.m_vHitNormal.z < 0.7f || trace.m_vHitNormal.z >= 1.0f)
+	{
+		return;
+	}
+
+	Vector newVelocity;
+	float backoff = DotProduct(this->landingVelocity, trace.m_vHitNormal);
+
+	for (int i = 0; i < 3; i++)
+	{
+		float change = trace.m_vHitNormal[i] * backoff;
+		newVelocity[i] = this->landingVelocity[i] - change;
+	}
+
+	float adjust = DotProduct(newVelocity, trace.m_vHitNormal);
+	if (adjust < 0.0f)
+	{
+		newVelocity -= trace.m_vHitNormal * adjust;
+	}
+
+	if (newVelocity.Length2D() >= this->landingVelocity.Length2D())
+	{
+		this->currentMoveData->m_vecVelocity.x = newVelocity.x;
+		this->currentMoveData->m_vecVelocity.y = newVelocity.y;
+		this->landingVelocity.x = newVelocity.x;
+		this->landingVelocity.y = newVelocity.y;
 	}
 }

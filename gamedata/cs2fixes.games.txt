@@ -49,8 +49,8 @@
 			}
 			"IsEntityController"
 			{
-				"windows"		"175"
-				"linux"			"174"
+				"windows"		"170"
+				"linux"			"169"
 			}
 			"CBaseEntity::StateChanged"
 			{
