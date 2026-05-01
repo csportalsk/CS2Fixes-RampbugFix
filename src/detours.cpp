@@ -33,7 +33,6 @@
 #include "playermanager.h"
 #include "igameevents.h"
 #include "gameconfig.h"
-#include "serversideclient.h"
 #include "tracefilter.h"
 
 #define VPROF_ENABLED
@@ -55,20 +54,39 @@ DECLARE_DETOUR(CategorizePosition, Detour_CategorizePosition);
 void FASTCALL Detour_ProcessMovement(CCSPlayer_MovementServices *pThis, void *pMove)
 {
 	CCSPlayerPawn *pPawn = pThis->GetPawn();
+	if (!pPawn)
+		return ProcessMovement(pThis, pMove);
 
 	ZEPlayer *player = g_playerManager->GetPlayer(pPawn->m_hController()->GetPlayerSlot());
-	if(!player) return ProcessMovement(pThis, pMove);
+	if (!player)
+		return ProcessMovement(pThis, pMove);
 	
-	player->currentMoveData = static_cast<CMoveData*>(pMove);
+	player->currentMoveData = static_cast<CMoveData *>(pMove);
 	player->didTPM = false;
 	player->processingMovement = true;
 
+	bool onGround = (pPawn->m_fFlags() & FL_ONGROUND) != 0;
+	if (!player->previousOnGround && onGround)
+	{
+		Vector velocity;
+		player->GetVelocity(&velocity);
+		player->RegisterLanding(velocity);
+		player->ApplySlopeFix();
+	}
+	else if (player->previousOnGround && !onGround)
+	{
+		Vector velocity;
+		player->GetVelocity(&velocity);
+		player->takeoffVelocity = velocity;
+	}
+
 	ProcessMovement(pThis, pMove);
 	
-	if(!player->didTPM)
+	if (!player->didTPM)
 		player->lastValidPlane = vec3_origin;
 	
 	player->processingMovement = false;
+	player->previousOnGround = (pPawn->m_fFlags() & FL_ONGROUND) != 0;
 }
 
 #define f32 float32
@@ -77,20 +95,10 @@ void FASTCALL Detour_ProcessMovement(CCSPlayer_MovementServices *pThis, void *pM
 
 void ClipVelocity(Vector &in, Vector &normal, Vector &out)
 {
-	// Determine how far along plane to slide based on incoming direction.
-	f32 backoff = DotProduct(in, normal);
+	f32 backoff = -((in.x * normal.x) + ((normal.z * in.z) + (in.y * normal.y))) * 1;
+	backoff = fmaxf(backoff, 0.0f) + 0.03125f;
 
-	for (i32 i = 0; i < 3; i++)
-	{
-		f32 change = normal[i] * backoff;
-		out[i] = in[i] - change;
-	}
-	float adjust = DotProduct(out, normal);
-	if (adjust < 0.0f)
-	{
-		adjust = MIN(adjust, -1 / 128);
-		out -= (normal * adjust);
-	}
+	out = normal * backoff + in;
 }
 
 bool IsValidMovementTrace(trace_t &tr, bbox_t bounds, CTraceFilterPlayerMovementCS *filter)
@@ -138,11 +146,11 @@ bool IsValidMovementTrace(trace_t &tr, bbox_t bounds, CTraceFilterPlayerMovement
 }
 
 
-#define MAX_BUMPS 4
-#define RAMP_PIERCE_DISTANCE 0.75f
-#define RAMP_BUG_THRESHOLD 0.99f
-#define RAMP_BUG_VELOCITY_THRESHOLD 0.95f 
-#define NEW_RAMP_THRESHOLD 0.95f
+#define MAX_BUMPS                   4
+#define RAMP_PIERCE_DISTANCE        0.0625f
+#define RAMP_BUG_THRESHOLD          0.98f
+#define RAMP_BUG_VELOCITY_THRESHOLD 0.95f
+#define NEW_RAMP_THRESHOLD          0.95f
 void TryPlayerMovePre(CCSPlayer_MovementServices *ms, Vector *pFirstDest, trace_t *pFirstTrace, bool *bIsSurfing)
 {
 	CCSPlayerPawn *pawn = ms->GetPawn();
@@ -243,7 +251,7 @@ void TryPlayerMovePre(CCSPlayer_MovementServices *ms, Vector *pFirstDest, trace_
 							bool goodTrace {};
 							f32 ratio {};
 							bool hitNewPlane {};
-							for (ratio = 0.1f; ratio <= 1.0f; ratio += 0.1f)
+							for (ratio = 0.25f; ratio <= 1.0f; ratio += 0.25f)
 							{
 								addresses::TracePlayerBBox(start + offsetDirection * RAMP_PIERCE_DISTANCE * ratio,
 															end + offsetDirection * RAMP_PIERCE_DISTANCE * ratio, bounds, &filter, pierce);
@@ -298,7 +306,7 @@ void TryPlayerMovePre(CCSPlayer_MovementServices *ms, Vector *pFirstDest, trace_
 			potentiallyStuck = pm.m_flFraction == 0.0f;
 		}
 
-		if (pm.m_flFraction * velocity.Length() > 0.03125f)
+		if (pm.m_flFraction * velocity.Length() > 0.03125f || pm.m_flFraction > 0.03125f)
 		{
 			allFraction += pm.m_flFraction;
 			start = pm.m_vEndPos;
@@ -309,6 +317,11 @@ void TryPlayerMovePre(CCSPlayer_MovementServices *ms, Vector *pFirstDest, trace_
 			break;
 		}
 		timeLeft -= gpGlobals->frametime * pm.m_flFraction;
+		if (numPlanes >= 5 || (pm.m_vHitNormal.z >= 0.7f && velocity.Length2D() < 1.0f))
+		{
+			VectorCopy(vec3_origin, velocity);
+			break;
+		}
 		planes[numPlanes] = pm.m_vHitNormal;
 		numPlanes++;
 		if (numPlanes == 1 && pawn->m_MoveType() == MOVETYPE_WALK && pawn->m_hGroundEntity().Get() == nullptr)
@@ -346,7 +359,7 @@ void TryPlayerMovePre(CCSPlayer_MovementServices *ms, Vector *pFirstDest, trace_
 			}
 			else
 			{ // go along the crease
-				if (numPlanes != 2  || (pm.m_vHitNormal.z >= 0.7 && velocity.Length2D() < 1.0f))
+				if (numPlanes != 2)
 				{
 					VectorCopy(vec3_origin, velocity);
 					break;
@@ -354,6 +367,7 @@ void TryPlayerMovePre(CCSPlayer_MovementServices *ms, Vector *pFirstDest, trace_
 				Vector dir;
 				f32 d;
 				CrossProduct(planes[0], planes[1], dir);
+				dir.NormalizeInPlace();
 				dir.NormalizeInPlace();
 				d = dir.Dot(velocity);
 				VectorScale(dir, d, velocity);
@@ -412,12 +426,12 @@ void CategorizePositionPre(CCSPlayer_MovementServices *ms,bool bStayOnGround)
 		return;
 	}
 	bbox_t bounds;
-	bounds.mins = {-16, -16, 0};
-	bounds.maxs = {16, 16, 72};
-                  
-	if (ms->m_bDucked)
+	bounds.mins = {-16.0f, -16.0f, 0.0f};
+	bounds.maxs = {16.0f, 16.0f, 72.0f};
+
+	if (ms->m_bDucked())
 	{
-		bounds.maxs.z = 54;
+		bounds.maxs.z = 54.0f;
 	}
 
 	CTraceFilterPlayerMovementCS filter(pawn);

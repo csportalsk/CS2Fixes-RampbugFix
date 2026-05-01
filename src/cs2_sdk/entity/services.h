@@ -25,6 +25,7 @@
 #include "gametrace.h"
 
 class CBaseEntity;
+class CCSPlayer_MovementServices;
 
 struct CSPerRoundStats_t
 {
@@ -92,17 +93,59 @@ public:
 	SCHEMA_FIELD(float, m_flSurfaceFriction)
 };
 
+class CCSPlayerBaseJump
+{
+public:
+	DECLARE_SCHEMA_CLASS_INLINE(CCSPlayerBaseJump);
+
+	SCHEMA_FIELD(CCSPlayer_MovementServices *, m_pMovementServices)
+};
+
+class alignas(8) CCSPlayerLegacyJump : public CCSPlayerBaseJump
+{
+public:
+	DECLARE_SCHEMA_CLASS_INLINE(CCSPlayerLegacyJump);
+
+	SCHEMA_FIELD(bool, m_bOldJumpPressed)
+	SCHEMA_FIELD(float, m_flJumpPressedTime)
+};
+
+class alignas(8) CCSPlayerModernJump : public CCSPlayerBaseJump
+{
+public:
+	DECLARE_SCHEMA_CLASS_INLINE(CCSPlayerModernJump);
+
+	SCHEMA_FIELD(int, m_nLastActualJumpPressTick)
+	SCHEMA_FIELD(float, m_flLastActualJumpPressFrac)
+	SCHEMA_FIELD(int, m_nLastUsableJumpPressTick)
+	SCHEMA_FIELD(float, m_flLastUsableJumpPressFrac)
+	SCHEMA_FIELD(int, m_nLastLandedTick)
+	SCHEMA_FIELD(float, m_flLastLandedFrac)
+	SCHEMA_FIELD(float, m_flLastLandedVelocityX)
+	SCHEMA_FIELD(float, m_flLastLandedVelocityY)
+	SCHEMA_FIELD(float, m_flLastLandedVelocityZ)
+};
+
 class CCSPlayer_MovementServices : public CPlayer_MovementServices_Humanoid
 {
 public:
 	DECLARE_SCHEMA_CLASS(CCSPlayer_MovementServices);
 
+	SCHEMA_FIELD(Vector, m_vecLadderNormal)
+	SCHEMA_FIELD(float, m_flAccumulatedJumpError)
 	SCHEMA_FIELD(float, m_flMaxFallVelocity)
 	SCHEMA_FIELD(float, m_flJumpVel)
 	SCHEMA_FIELD(float, m_flStamina)
 	SCHEMA_FIELD(float, m_flDuckSpeed)
+	SCHEMA_FIELD(float, m_flDuckAmount)
 	SCHEMA_FIELD(bool, m_bDuckOverride)
+	SCHEMA_FIELD(float, m_flLastDuckTime)
+	SCHEMA_FIELD(float, m_bDesiresDuck)
+	SCHEMA_FIELD(bool, m_bDucking)
 	SCHEMA_FIELD(bool, m_bDucked)
+	SCHEMA_FIELD(bool, m_duckUntilOnGround)
+	SCHEMA_FIELD(CCSPlayerLegacyJump, m_LegacyJump)
+	SCHEMA_FIELD(CCSPlayerModernJump, m_ModernJump)
 };
 
 class CPlayer_WeaponServices : public CPlayerPawnComponent
@@ -261,6 +304,12 @@ struct SubtickMove
 	bool pressed;
 };
 
+struct MovementVector2D
+{
+	float x;
+	float y;
+};
+
 class CMoveDataBase
 {
 public:
@@ -301,23 +350,23 @@ public:
 		for (int i = 0; i < source.m_TouchList.Count(); i++)
 		{
 			auto touch = this->m_TouchList.AddToTailGetPtr();
-			touch->deltavelocity = m_TouchList[i].deltavelocity;
-			touch->trace.m_pSurfaceProperties = m_TouchList[i].trace.m_pSurfaceProperties;
-			touch->trace.m_pEnt = m_TouchList[i].trace.m_pEnt;
-			touch->trace.m_pHitbox = m_TouchList[i].trace.m_pHitbox;
-			touch->trace.m_hBody = m_TouchList[i].trace.m_hBody;
-			touch->trace.m_hShape = m_TouchList[i].trace.m_hShape;
-			touch->trace.m_nContents = m_TouchList[i].trace.m_nContents;
-			touch->trace.m_BodyTransform = m_TouchList[i].trace.m_BodyTransform;
-			touch->trace.m_vHitNormal = m_TouchList[i].trace.m_vHitNormal;
-			touch->trace.m_vHitPoint = m_TouchList[i].trace.m_vHitPoint;
-			touch->trace.m_flHitOffset = m_TouchList[i].trace.m_flHitOffset;
-			touch->trace.m_flFraction = m_TouchList[i].trace.m_flFraction;
-			touch->trace.m_nTriangle = m_TouchList[i].trace.m_nTriangle;
-			touch->trace.m_nHitboxBoneIndex = m_TouchList[i].trace.m_nHitboxBoneIndex;
-			touch->trace.m_eRayType = m_TouchList[i].trace.m_eRayType;
-			touch->trace.m_bStartInSolid = m_TouchList[i].trace.m_bStartInSolid;
-			touch->trace.m_bExactHitPoint = m_TouchList[i].trace.m_bExactHitPoint;
+			touch->deltavelocity = source.m_TouchList[i].deltavelocity;
+			touch->trace.m_pSurfaceProperties = source.m_TouchList[i].trace.m_pSurfaceProperties;
+			touch->trace.m_pEnt = source.m_TouchList[i].trace.m_pEnt;
+			touch->trace.m_pHitbox = source.m_TouchList[i].trace.m_pHitbox;
+			touch->trace.m_hBody = source.m_TouchList[i].trace.m_hBody;
+			touch->trace.m_hShape = source.m_TouchList[i].trace.m_hShape;
+			touch->trace.m_nContents = source.m_TouchList[i].trace.m_nContents;
+			touch->trace.m_BodyTransform = source.m_TouchList[i].trace.m_BodyTransform;
+			touch->trace.m_vHitNormal = source.m_TouchList[i].trace.m_vHitNormal;
+			touch->trace.m_vHitPoint = source.m_TouchList[i].trace.m_vHitPoint;
+			touch->trace.m_flHitOffset = source.m_TouchList[i].trace.m_flHitOffset;
+			touch->trace.m_flFraction = source.m_TouchList[i].trace.m_flFraction;
+			touch->trace.m_nTriangle = source.m_TouchList[i].trace.m_nTriangle;
+			touch->trace.m_nHitboxBoneIndex = source.m_TouchList[i].trace.m_nHitboxBoneIndex;
+			touch->trace.m_eRayType = source.m_TouchList[i].trace.m_eRayType;
+			touch->trace.m_bStartInSolid = source.m_TouchList[i].trace.m_bStartInSolid;
+			touch->trace.m_bExactHitPoint = source.m_TouchList[i].trace.m_bExactHitPoint;
 		}
 	}
 
@@ -355,15 +404,14 @@ public:
 
 	CMoveData(const CMoveData &source)
 		: CMoveDataBase(source), m_outWishVel {source.m_outWishVel}, m_vecOldAngles {source.m_vecOldAngles},
-		  m_vecInputRotated {source.m_vecInputRotated}, m_vecContinousAcceleration {source.m_vecContinousAcceleration},
+		  m_vecWalkWishVel {source.m_vecWalkWishVel}, m_vecContinousAcceleration {source.m_vecContinousAcceleration},
 		  m_vecFrameVelocityDelta {source.m_vecFrameVelocityDelta}, m_flMaxSpeed {source.m_flMaxSpeed}
 	{
 	}
 
 	Vector m_outWishVel;
 	QAngle m_vecOldAngles;
-	// World space input vector. Used to compare against last the movement services' previous rotation for ground movement stuff.
-	Vector m_vecInputRotated;
+	MovementVector2D m_vecWalkWishVel;
 	// u/s^2.
 	Vector m_vecContinousAcceleration;
 	// Immediate delta in u/s. Air acceleration bypasses per second acceleration, applies up to half of its impulse to the velocity and the rest goes
@@ -372,12 +420,13 @@ public:
 	float m_flMaxSpeed;
 	float m_flClientMaxSpeed;
 	float m_flFrictionDecel;
+	float m_flPreAirMovePosZ;
+	float m_flPreAirMoveVelZ;
+	float m_flPreAirMoveAccelZ;
 	bool m_bInAir;
 	bool m_bGameCodeMovedPlayer; // true if usercmd cmd number == (m_nGameCodeHasMovedPlayerAfterCommand + 1)
 };
 
 #ifdef _WIN32
-static_assert(sizeof(CMoveData) == 312, "Class didn't match expected size");
-#else
-static_assert(sizeof(CMoveData) == 304, "Class didn't match expected size");
+static_assert(sizeof(CMoveData) == 320, "Class didn't match expected size");
 #endif

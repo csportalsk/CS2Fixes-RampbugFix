@@ -44,6 +44,7 @@ enum class ETargetType {
 };
 
 class ZEPlayer;
+struct bbox_t;
 
 class ZEPlayerHandle
 {
@@ -102,8 +103,9 @@ public:
 	uint64 GetSteamId64() { return m_SteamID->ConvertToUint64(); }
 	const CSteamID* GetSteamId() { return m_SteamID; }
 
-	CMoveData *currentMoveData;
+	CMoveData *currentMoveData = nullptr;
 	bool processingMovement {};
+	bool previousOnGround {};
 
 	CCSPlayerController *GetController();
 	CCSPlayerPawn *GetPawn();
@@ -112,12 +114,18 @@ public:
 	void GetVelocity(Vector *velocity);
 	void SetOrigin(const Vector &origin);
 	void GetOrigin(Vector *origin);
+	void GetBBoxBounds(bbox_t *bounds);
+	void RegisterLanding(const Vector &velocity);
+	void ApplySlopeFix();
 
 	bool didTPM {};
 	bool overrideTPM {};
 	Vector tpmVelocity = vec3_invalid;
 	Vector tpmOrigin = vec3_invalid;
-	Vector lastValidPlane;
+	Vector lastValidPlane = vec3_origin;
+	Vector takeoffVelocity = vec3_origin;
+	Vector landingOrigin = vec3_origin;
+	Vector landingVelocity = vec3_origin;
 	
 	void SetConnected() { m_bConnected = true; }
 	void SetUnauthenticatedSteamId(const CSteamID* steamID) { m_UnauthenticatedSteamID = steamID; }
