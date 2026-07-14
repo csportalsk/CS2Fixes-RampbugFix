@@ -16,3 +16,10 @@ bld/
 *.vcxproj.user
 .vscode
 /dockerbuild
+.ambuild2/
+.venv/
+build-command.txt
+build-linux/
+cs2fixes-rampbugfix.vdf
+metamod-source/
+pdblog.txt
