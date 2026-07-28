@@ -60,7 +60,7 @@ void FASTCALL Detour_ProcessMovement(CCSPlayer_MovementServices *pThis, void *pM
 	ZEPlayer *player = g_playerManager->GetPlayer(pPawn->m_hController()->GetPlayerSlot());
 	if (!player)
 		return ProcessMovement(pThis, pMove);
-	
+
 	player->currentMoveData = static_cast<CMoveData *>(pMove);
 	player->didTPM = false;
 	player->processingMovement = true;
@@ -81,10 +81,10 @@ void FASTCALL Detour_ProcessMovement(CCSPlayer_MovementServices *pThis, void *pM
 	}
 
 	ProcessMovement(pThis, pMove);
-	
+
 	if (!player->didTPM)
 		player->lastValidPlane = vec3_origin;
-	
+
 	player->processingMovement = false;
 	player->previousOnGround = (pPawn->m_fFlags() & FL_ONGROUND) != 0;
 }
@@ -154,7 +154,13 @@ bool IsValidMovementTrace(trace_t &tr, bbox_t bounds, CTraceFilterPlayerMovement
 void TryPlayerMovePre(CCSPlayer_MovementServices *ms, Vector *pFirstDest, trace_t *pFirstTrace, bool *bIsSurfing)
 {
 	CCSPlayerPawn *pawn = ms->GetPawn();
+	if (!pawn)
+		return;
+
 	ZEPlayer *player = g_playerManager->GetPlayer(pawn->m_hController()->GetPlayerSlot());
+	if (!player)
+		return;
+
 	player->overrideTPM = false;
 	player->didTPM = true;
 
@@ -191,7 +197,7 @@ void TryPlayerMovePre(CCSPlayer_MovementServices *ms, Vector *pFirstDest, trace_
 	CTraceFilterPlayerMovementCS filter(pawn);
 
 	bool potentiallyStuck {};
-	
+
 	for (bumpCount = 0; bumpCount < MAX_BUMPS; bumpCount++)
 	{
 		// Assume we can move all the way from the current origin to the end point.
@@ -261,10 +267,10 @@ void TryPlayerMovePre(CCSPlayer_MovementServices *ms, Vector *pFirstDest, trace_
 								}
 								// Try until we hit a similar plane.
 								// clang-format off
-								validPlane = pierce.m_flFraction < 1.0f && pierce.m_flFraction > 0.1f 
+								validPlane = pierce.m_flFraction < 1.0f && pierce.m_flFraction > 0.1f
 											 && pierce.m_vHitNormal.Dot(player->lastValidPlane) >= RAMP_BUG_THRESHOLD;
 
-								hitNewPlane = pm.m_vHitNormal.Dot(pierce.m_vHitNormal) < NEW_RAMP_THRESHOLD 
+								hitNewPlane = pm.m_vHitNormal.Dot(pierce.m_vHitNormal) < NEW_RAMP_THRESHOLD
 											  && player->lastValidPlane.Dot(pierce.m_vHitNormal) > NEW_RAMP_THRESHOLD;
 								// clang-format on
 								goodTrace = CloseEnough(pierce.m_flFraction, 1.0f, FLT_EPSILON) || validPlane;
@@ -367,6 +373,12 @@ void TryPlayerMovePre(CCSPlayer_MovementServices *ms, Vector *pFirstDest, trace_
 				Vector dir;
 				f32 d;
 				CrossProduct(planes[0], planes[1], dir);
+				if (dir.LengthSqr() < FLT_EPSILON)
+				{
+					// The planes are parallel/degenerate - there is no point in continuing in this direction.
+					velocity = vec3_origin;
+					break;
+				}
 				dir.NormalizeInPlace();
 				dir.NormalizeInPlace();
 				d = dir.Dot(velocity);
@@ -386,9 +398,14 @@ void TryPlayerMovePre(CCSPlayer_MovementServices *ms, Vector *pFirstDest, trace_
 
 void TryPlayerMovePost(CCSPlayer_MovementServices *ms, bool *bIsSurfing)
 {
-	ZEPlayer *player = g_playerManager->GetPlayer(ms->GetPawn()->m_hController()->GetPlayerSlot());
-	if(!player)
+	CCSPlayerPawn *pawn = ms->GetPawn();
+	if (!pawn)
 		return;
+
+	ZEPlayer *player = g_playerManager->GetPlayer(pawn->m_hController()->GetPlayerSlot());
+	if (!player)
+		return;
+
 	Vector velocity;
 	player->GetVelocity(&velocity);
 	bool velocityHeavilyModified =
@@ -411,10 +428,16 @@ void FASTCALL Detour_TryPlayerMove(CCSPlayer_MovementServices *ms, CMoveData *mv
 void CategorizePositionPre(CCSPlayer_MovementServices *ms,bool bStayOnGround)
 {
 	CCSPlayerPawn *pawn = ms->GetPawn();
+	if (!pawn)
+		return;
+
 	ZEPlayer *player = g_playerManager->GetPlayer(pawn->m_hController()->GetPlayerSlot());
+	if (!player)
+		return;
+
 	// Already on the ground?
 	// If we are already colliding on a standable valid plane, we don't want to do the check.
-	if (bStayOnGround || player->lastValidPlane.Length() < 0.000001f|| player->lastValidPlane.z > 0.7f)
+	if (bStayOnGround || player->lastValidPlane.Length() < 0.000001f || player->lastValidPlane.z > 0.7f)
 	{
 		return;
 	}
@@ -481,7 +504,7 @@ bool InitDetours(CGameConfig *gameConfig)
 	{
 		if (!g_vecDetours[i]->CreateDetour(gameConfig))
 			success = false;
-		
+
 		g_vecDetours[i]->EnableDetour();
 	}
 

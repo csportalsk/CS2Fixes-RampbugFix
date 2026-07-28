@@ -77,10 +77,10 @@ ZEPlayer *ZEPlayerHandle::Get() const
 
 	if (!pZEPlayer)
 		return nullptr;
-	
+
 	if (pZEPlayer->GetHandle().m_Index != m_Index)
 		return nullptr;
-	
+
 	return pZEPlayer;
 }
 
@@ -219,6 +219,7 @@ void ZEPlayer::GetVelocity(Vector *velocity)
 	CBasePlayerPawn *pawn = this->GetPawn();
 	if (!pawn)
 	{
+		*velocity = vec3_origin;
 		return;
 	}
 	*velocity = pawn->m_vecAbsVelocity();
