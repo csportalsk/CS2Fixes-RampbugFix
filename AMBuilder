@@ -10,15 +10,15 @@ for sdk_target in MMSPlugin.sdk_targets:
   cxx = sdk_target.cxx
 
   binary = MMSPlugin.HL2Library(builder, cxx, MMSPlugin.plugin_name, sdk)
-  
+
   try:
     version = subprocess.check_output(['git', 'describe', '--tags', '--long']).decode('ascii').strip()
   except subprocess.SubprocessError as e:
-    version = "2.0-dev"
+    version = "2.0-dev-v03-csp"
     print("git describe failed as there are no tags")
-	
+
   print(f'Setting version to "{version}"')
-	
+
   binary.compiler.defines += ['CS2FIXES_VERSION="' + version + '"']
 
   if binary.compiler.behavior == 'gcc':
@@ -28,6 +28,7 @@ for sdk_target in MMSPlugin.sdk_targets:
     os.path.join(builder.sourcePath, 'src', 'cs2_sdk'),
     os.path.join(builder.sourcePath, 'src', 'utils'),
     os.path.join(builder.sourcePath, 'sdk', 'thirdparty', 'protobuf-3.21.8', 'src'),
+    os.path.join(builder.sourcePath, 'protobuf', 'generated'),
     os.path.join(builder.sourcePath, 'vendor', 'funchook', 'include'),
   ]
 
@@ -62,6 +63,7 @@ for sdk_target in MMSPlugin.sdk_targets:
     'sdk/entity2/entityidentity.cpp',
     'sdk/entity2/entitykeyvalues.cpp',
     'sdk/tier1/keyvalues3.cpp',
+    'protobuf/generated/valveextensions.pb.cc',
   ]
 
   protoc_builder = builder.tools.Protoc(protoc = sdk_target.protoc, sources = [
